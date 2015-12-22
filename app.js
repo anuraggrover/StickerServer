@@ -6,7 +6,8 @@
         multer = require('multer'),
         passport = require('passport'),
         Strategy = require('passport-local').Strategy,
-        session = require('express-session');
+        session = require('express-session'),
+        cors = require('cors');
 
     var PENDING = 'pending',
         APPROVED = 'approved',
@@ -28,6 +29,8 @@
     var app = express(),
         stickerPackSchema, userSchema, StickerPack, UserModel;
 
+    app.use(cors());
+
     function initDb() {
         db.on('error', function () {
             console.log('error opening db connection');
@@ -38,7 +41,9 @@
 
             stickerPackSchema = new mongoose.Schema({
                 name: String,
+                desc: String,
                 stickerId: String,
+                authorId: String,
                 path: String,
                 approvalStatus: String,
                 tags: Array,
@@ -74,37 +79,48 @@
         };
     }
 
+    function validateStickerData(file, stickerData) {
+        var data = {
+            name: stickerData['name'],
+            desc: stickerData.desc || '',
+            stickerId: file.filename.substr(0, file.filename.indexOf('.')),
+            path: file.filename,
+            approvalStatus: PENDING,
+            authorId: stickerData.authorId
+        };
+
+        stickerData.lifespan && (data.lifespan = stickerData.lifespan);
+        stickerData.location && (data.location = stickerData.location);
+        stickerData.events && (data.events = stickerData.events.replace(/ /g, '').split(','));
+        stickerData.tags && (data.tags = stickerData.tags.replace(/ /g, '').split(','));
+
+        return data;
+    }
+
     function initRestApi() {
         app.use('/static', express.static('public'));
 
         app.post('/stickers', function (req, res, next) {
             upload(req, res, function (err) {
-                var stickerPack;
+                var stickerPack, stickerData = JSON.parse(req.body.metadata);
 
-                if (!req.file) {
+                if (!req.file || !stickerData.authorId) {
+                    console.log('Insufficent data', req.file, req.body.authorId);
                     res.sendStatus(500);
                     return;
 
                 }
 
-                console.log('in callback', req.file.filename, req.file.originalname, req.file.path, req.body['pack-name']);
+                console.log('in callback', req.file.filename, req.file.originalname, req.file.path, req.body['name']);
 
                 if (err) {
+                    console.log('got error', err);
                     res.sendStatus(500);
 
                 } else {
-                    console.log('Got value', req.body.events, req.body.tags.length);
+                    console.log('Got value', typeof req.body.lifespan);
 
-                    stickerPack = new StickerPack({
-                        name: req.body['pack-name'],
-                        stickerId: req.file.filename.substr(0, req.file.filename.indexOf('.')),
-                        path: req.file.filename,
-                        lifespan: {start: req.body['span-start'], end: req.body['span-end']},
-                        location: {lat: req.body.lat, long: req.body.long},
-                        events: req.body.events.replace(/ /g, '').split(','),
-                        tags: req.body.tags.replace(/ /g, '').split(','),
-                        approvalStatus: PENDING
-                    });
+                    stickerPack = new StickerPack(validateStickerData(req.file, stickerData));
 
                     stickerPack.save(function (err, stickerPack) {
                         if (err) {
@@ -123,24 +139,34 @@
 
         app.get('/stickers', function (req, res) {
             StickerPack.find(function (err, stickerPacks) {
-                var packs = [];
+                var packs = [],
+                    authorId = req.query.authorId;
 
                 if (err) {
                     console.log('got error', err);
                     return;
                 }
 
-                stickerPacks.forEach(function (stickerPack) {
-                    if (req.query.approver) {
-                        if (stickerPack.approvalStatus === PENDING) {
+                console.log('user id:', authorId);
+
+                UserModel.findById(authorId, function (err, doc) {
+                    if (err || !doc) {
+                        console.log('user not found');
+
+                        res.sendStatus(500);
+
+                        return;
+                    }
+
+                    stickerPacks.forEach(function (stickerPack) {
+                        if (stickerPack.authorId === authorId) {
                             packs.push(normalizeStickerPack(stickerPack));
                         }
-                    } else {
-                        packs.push(normalizeStickerPack(stickerPack));
-                    }
+                    });
+
+                    res.end(JSON.stringify(packs));
                 });
 
-                res.end(JSON.stringify(packs));
             });
         });
 
@@ -219,21 +245,6 @@
                     return cb(null, user);
                 });
             }));
-
-        /*passport.serializeUser(function(user, cb) {
-            console.log('in serialize user', user);
-
-            cb(null, user.username);
-        });
-
-        passport.deserializeUser(function(id, cb) {
-            console.log('in deserialize user', id);
-
-            UserModel.find({ username: id }, function (err, user) {
-                if (err) { return cb(err); }
-                cb(null, user);
-            });
-        });*/
 
         passport.serializeUser(function(user, done) {
             done(null, user);
