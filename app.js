@@ -22,7 +22,7 @@
         }
     });
 
-    var upload = multer({ storage: storage}).single('sticker');
+    var upload = multer({ storage: storage });
 
     var db = mongoose.connection;
 
@@ -42,9 +42,8 @@
             stickerPackSchema = new mongoose.Schema({
                 name: String,
                 desc: String,
-                stickerId: String,
+                stickers: Array,
                 authorId: String,
-                path: String,
                 approvalStatus: String,
                 tags: Array,
                 location: {lat: String, long: String},
@@ -69,25 +68,33 @@
     }
     
     function normalizeStickerPack(stickerPack) {
+        console.log('normalizing', stickerPack);
+
         return {
-            id: stickerPack.stickerId,
-            path: '/static/uploads/' + stickerPack.path,
+            id: stickerPack._id,
+            name: stickerPack.name,
+            path: '/static/uploads/',
             approvalStatus: stickerPack.approvalStatus,
             events: stickerPack.events,
             lifespan: stickerPack.lifespan,
-            tags: stickerPack.tags
+            tags: stickerPack.tags,
+            stickers: stickerPack.stickers
         };
     }
 
-    function validateStickerData(file, stickerData) {
+    function validateStickerPackData(files, stickerData) {
         var data = {
             name: stickerData['name'],
             desc: stickerData.desc || '',
-            stickerId: file.filename.substr(0, file.filename.indexOf('.')),
-            path: file.filename,
             approvalStatus: PENDING,
             authorId: stickerData.authorId
-        };
+        }, fileNames = [];
+
+        for (var i = 0; i < files.length; i++) {
+            fileNames.push(files[i].filename);
+        }
+
+        data.stickers = fileNames;
 
         stickerData.lifespan && (data.lifespan = stickerData.lifespan);
         stickerData.location && (data.location = stickerData.location);
@@ -100,47 +107,38 @@
     function initRestApi() {
         app.use('/static', express.static('public'));
 
-        app.post('/stickers', function (req, res, next) {
-            upload(req, res, function (err) {
-                var stickerPack, stickerData = JSON.parse(req.body.metadata);
+        app.post('/stickerpacks', upload.array('sticker-pack', 12), function (req, res, next) {
+            console.log('into req', req.files, req.body.metadata);
 
-                if (!req.file || !stickerData.authorId) {
-                    console.log('Insufficent data', req.file, req.body.authorId);
-                    res.sendStatus(500);
-                    return;
+            var stickerData = JSON.parse(req.body.metadata),
+                stickerPack;
 
-                }
+            if (!req.files[0] || !stickerData.authorId) {
+                console.log('Insufficent data', req.files[0], stickerData.authorId);
+                res.sendStatus(500);
+                return;
+            }
 
-                console.log('in callback', req.file.filename, req.file.originalname, req.file.path, req.body['name']);
+            stickerPack = new StickerPack(validateStickerPackData(req.files, stickerData));
 
+            stickerPack.save(function (err, stickerPack) {
                 if (err) {
-                    console.log('got error', err);
+                    console.error(err);
+
                     res.sendStatus(500);
 
-                } else {
-                    console.log('Got value', typeof req.body.lifespan);
-
-                    stickerPack = new StickerPack(validateStickerData(req.file, stickerData));
-
-                    stickerPack.save(function (err, stickerPack) {
-                        if (err) {
-                            console.error(err);
-
-                            res.sendStatus(500);
-
-                            return;
-                        }
-
-                        res.sendStatus(200);
-                    });
+                    return;
                 }
-            })
+
+                res.sendStatus(200);
+            });
         });
 
-        app.get('/stickers', function (req, res) {
+        app.get('/stickerpacks', function (req, res) {
             StickerPack.find(function (err, stickerPacks) {
                 var packs = [],
-                    authorId = req.query.authorId;
+                    authorId = req.query.authorId,
+                    isApprover = req.query.isApprover;
 
                 if (err) {
                     console.log('got error', err);
@@ -149,28 +147,38 @@
 
                 console.log('user id:', authorId);
 
-                UserModel.findById(authorId, function (err, doc) {
-                    if (err || !doc) {
-                        console.log('user not found');
+                if (authorId) {
+                    UserModel.findById(authorId, function (err, doc) {
+                        if (err || !doc) {
+                            console.log('user not found');
 
-                        res.sendStatus(500);
+                            res.sendStatus(500);
 
-                        return;
-                    }
-
-                    stickerPacks.forEach(function (stickerPack) {
-                        if (stickerPack.authorId === authorId) {
-                            packs.push(normalizeStickerPack(stickerPack));
+                            return;
                         }
+
+                        stickerPacks.forEach(function (stickerPack) {
+                            if (stickerPack.authorId === authorId) {
+                                packs.push(normalizeStickerPack(stickerPack));
+                            }
+                        });
+
+                        res.end(JSON.stringify(packs));
+                    });
+                } else if (isApprover) {
+                    stickerPacks.forEach(function (stickerPack) {
+                        packs.push(normalizeStickerPack(stickerPack));
                     });
 
                     res.end(JSON.stringify(packs));
-                });
+                } else {
+                    res.end(JSON.stringify(packs));
+                }
 
             });
         });
 
-        app.delete('/stickers/:stickerId', function (req, res) {
+        app.delete('/stickerpacks/:stickerId', function (req, res) {
             var stickerId = req.params.stickerId;
 
             console.log('sticker id', stickerId);
@@ -189,36 +197,38 @@
 
         });
 
-        app.post('/stickers/approve/:stickerId', function (req, res) {
+        app.post('/stickerpacks/approve/:stickerId', function (req, res) {
             var stickerId = req.params.stickerId;
 
             console.log('sticker id', stickerId);
 
             StickerPack.findOneAndUpdate({
-                stickerId: stickerId
+                _id: stickerId
             }, {
                 approvalStatus: APPROVED
             }, {new: true}, function (err, sticker) {
-                if (err) {
+                if (err || !sticker) {
                     res.sendStatus(500);
                     return;
                 }
+
+                console.log('found', sticker);
 
                 res.end(JSON.stringify(normalizeStickerPack(sticker)));
             });
         });
 
-        app.post('/stickers/reject/:stickerId', function (req, res) {
+        app.post('/stickerpacks/reject/:stickerId', function (req, res) {
             var stickerId = req.params.stickerId;
 
             console.log('sticker id', stickerId);
 
             StickerPack.findOneAndUpdate({
-                stickerId: stickerId
+                _id: stickerId
             }, {
                 approvalStatus: REJECTED
             }, {new: true}, function (err, sticker) {
-                if (err) {
+                if (err || !sticker) {
                     res.sendStatus(500);
                     return;
                 }
