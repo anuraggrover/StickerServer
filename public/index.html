@@ -4,12 +4,67 @@
     <meta charset="UTF-8">
     <title></title>
 </head>
+
+<style>
+    .form-row {
+        margin-bottom: 10px;
+    }
+
+    label {
+        margin-right: 10px;
+    }
+</style>
 <body>
 
 <form action="http://localhost:3000/stickers" method="post" enctype="multipart/form-data">
-    Upload sticker here<input type="file" accept="image/*" name="sticker"/>
-    <input type="text" value="Abc" name="pack-name"/>
-    <input type="submit" value="Submit">
+
+    <div class="form-row">
+        Upload sticker here<input class="sticker-file" type="file" accept="image/*" name="sticker"/>
+        <input class="pack-name" type="text" value="Abc" name="pack-name"/>
+    </div>
+
+    <div class="form-row">
+        <label>Start Date</label><input type="text" value="25/12" class="span-start" name="span-start">
+        <label>End Date</label><input type="text" value="31/12" class="span-end" name="span-end">
+    </div>
+
+    <div class="form-row">
+        <label>Tags</label><input class="tags" type="text" placeholder="Enter comma separated tags here" value="tag1,
+        tag2"/>
+    </div>
+
+    <div class="form-row">
+        <label>Valid Events</label>
+        <input type="text" class="events" placeholder="Enter comma separated events here" value="event1, event2"/>
+    </div>
+
+
+    <input class="submit-btn" type="submit">
 </form>
+
+<script>
+    var formEl = document.getElementsByTagName('form')[0],
+            submitBtn = document.querySelector('.submit-btn');
+
+    submitBtn.addEventListener('click', function (e) {
+        e.preventDefault();
+
+        var formData = new FormData();
+
+        // HTML file input, chosen by user
+        formData.append("sticker", document.querySelector('.sticker-file').files[0]);
+        formData.append("pack-name", document.querySelector('.pack-name').value);
+        formData.append("span-start", document.querySelector('.span-start').value);
+        formData.append("span-end", document.querySelector('.span-end').value);
+        formData.append("tags", document.querySelector('.tags').value);
+        formData.append("events", document.querySelector('.events').value);
+
+
+
+        var request = new XMLHttpRequest();
+        request.open("POST", "http://localhost:3000/stickers");
+        request.send(formData);
+    }, false);
+</script>
 </body>
 </html>

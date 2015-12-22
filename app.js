@@ -37,10 +37,14 @@
             console.log('successfully opened mongoose connection');
 
             stickerPackSchema = new mongoose.Schema({
-                name: {type: String},
-                stickerId: {type: String},
-                path: {type: String},
-                approvalStatus: {type: String}
+                name: String,
+                stickerId: String,
+                path: String,
+                approvalStatus: String,
+                tags: Array,
+                location: {lat: String, long: String},
+                lifespan: {start: String, end: String},
+                events: Array
             });
 
             userSchema = new mongoose.Schema({
@@ -63,7 +67,10 @@
         return {
             id: stickerPack.stickerId,
             path: '/static/uploads/' + stickerPack.path,
-            approvalStatus: stickerPack.approvalStatus
+            approvalStatus: stickerPack.approvalStatus,
+            events: stickerPack.events,
+            lifespan: stickerPack.lifespan,
+            tags: stickerPack.tags
         };
     }
 
@@ -73,18 +80,29 @@
         app.post('/stickers', function (req, res, next) {
             upload(req, res, function (err) {
                 var stickerPack;
+
+                if (!req.file) {
+                    res.sendStatus(500);
+                    return;
+
+                }
+
                 console.log('in callback', req.file.filename, req.file.originalname, req.file.path, req.body['pack-name']);
 
                 if (err) {
-                    res.end(JSON.stringify({
-                        status: 'Not ok'
-                    }));
+                    res.sendStatus(500);
 
                 } else {
+                    console.log('Got value', req.body.events, req.body.tags.length);
+
                     stickerPack = new StickerPack({
                         name: req.body['pack-name'],
                         stickerId: req.file.filename.substr(0, req.file.filename.indexOf('.')),
                         path: req.file.filename,
+                        lifespan: {start: req.body['span-start'], end: req.body['span-end']},
+                        location: {lat: req.body.lat, long: req.body.long},
+                        events: req.body.events.replace(/ /g, '').split(','),
+                        tags: req.body.tags.replace(/ /g, '').split(','),
                         approvalStatus: PENDING
                     });
 
