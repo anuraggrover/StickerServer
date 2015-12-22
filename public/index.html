@@ -24,6 +24,11 @@
     </div>
 
     <div class="form-row">
+        <input class="desc" value="Sample Description"/>
+        <label>Enter Description of sticker pack</label>
+    </div>
+
+    <div class="form-row">
         <label>Start Date</label><input type="text" value="25/12" class="span-start" name="span-start">
         <label>End Date</label><input type="text" value="31/12" class="span-end" name="span-end">
     </div>
@@ -52,14 +57,18 @@
         var formData = new FormData();
 
         // HTML file input, chosen by user
-        formData.append("sticker", document.querySelector('.sticker-file').files[0]);
-        formData.append("pack-name", document.querySelector('.pack-name').value);
-        formData.append("span-start", document.querySelector('.span-start').value);
-        formData.append("span-end", document.querySelector('.span-end').value);
-        formData.append("tags", document.querySelector('.tags').value);
-        formData.append("events", document.querySelector('.events').value);
-
-
+        formData.append('sticker', document.querySelector('.sticker-file').files[0]);
+        formData.append('metadata', JSON.stringify({
+            name:  document.querySelector('.pack-name').value,
+            desc: document.querySelector('.desc').value,
+            lifespan: {
+                from: document.querySelector('.span-start').value,
+                to: document.querySelector('.span-end').value
+            },
+            tags: document.querySelector('.tags').value,
+            events: document.querySelector('.events').value,
+            authorId: '5678d041cb14e916a61d28b1'
+        }));
 
         var request = new XMLHttpRequest();
         request.open("POST", "http://localhost:3000/stickers");
